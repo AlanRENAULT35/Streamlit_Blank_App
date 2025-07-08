@@ -21,6 +21,7 @@ pg = st.navigation({
     "Exercises": [
         # BASE
         st.Page(exercisesPath + "base.py", title="Home", icon=":material/home:"),
+        st.Page(exercisesPath + "openai-chatbot.py", title="openai-chatbot"),
         # st.Page(exercisesPath + "about.py", title="About", icon=":material/info:"),
         # st.Page(exercisesPath + "contact.py", title="Contact", icon=":material/contact_mail:"),
         
