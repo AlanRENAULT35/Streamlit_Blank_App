@@ -1,7 +1,6 @@
 import streamlit as st
 from openai import OpenAI
 import base64
-import requests # Used for potential future needs, not directly in this simplified version
 
 # --- Configuration ---
 # Use st.secrets to securely access your OpenAI API key
@@ -179,3 +178,143 @@ st.markdown("Developed with ❤️ using Streamlit and OpenAI APIs.")
 # 2. Make sure you have the .streamlit/secrets.toml file configured as described above.
 # 3. Install the necessary libraries: `pip install streamlit openai`
 # 4. Run from your terminal: `streamlit run app.py`
+
+import os
+
+class VisionProcessor:
+    def __init__(self):
+        # Initialize OpenAI client with API key from environment variable
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    def encode_image(self, image_path):
+        """Encodes an image to a base64 string."""
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode("utf-8")
+
+    def vision_analyze_image(self, image_input, detail="auto", custom_prompt=None):
+        """
+        Analyzes an image using OpenAI's Vision model.
+
+        Args:
+            image_input (str or bytes): Path to the image file or base64 encoded image string.
+            detail (str): Optional. Controls the level of detail in the response.
+                          Can be "low", "high", or "auto". Defaults to "auto".
+            custom_prompt (str): Optional. A custom prompt to guide the analysis.
+                                 If None, a default prompt is used.
+
+        Returns:
+            dict: The JSON response from the OpenAI API containing the analysis.
+                  Returns None if an error occurs.
+        """
+        if isinstance(image_input, str) and os.path.exists(image_input):
+            # If it's a file path, encode it
+            base64_image = self.encode_image(image_input)
+        elif isinstance(image_input, str) and image_input.startswith("data:image"):
+            # If it's already a data URI (base64 string with header)
+            base64_image = image_input.split(",")[1]
+        elif isinstance(image_input, bytes):
+            # If it's raw bytes (e.g., from st.file_uploader), encode it
+            base64_image = base64.b64encode(image_input).decode("utf-8")
+        else:
+            st.error("Invalid image input. Please provide a file path or image bytes.")
+            return None
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.client.api_key}"
+        }
+
+        # Determine the content for the image
+        image_content = {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{base64_image}",
+                "detail": detail  # Apply detail option
+            }
+        }
+
+        # Determine the prompt to use
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": custom_prompt if custom_prompt else "What’s in this image? Describe it in detail, including objects, colors, and any discernible text."},
+                    image_content
+                ],
+            }
+        ]
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o",  # Use gpt-4o for image understanding
+                messages=messages,
+                max_tokens=1000,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            st.error(f"An error occurred during image analysis: {e}")
+            return None
+
+# --- Streamlit Application ---
+
+st.set_page_config(layout="wide", page_title="Image Analysis with OpenAI Vision")
+
+st.title("👁️ Image Analysis with OpenAI Vision")
+st.write("Upload an image and let OpenAI's `gpt-4o` model describe it for you.")
+
+# Initialize VisionProcessor
+vision_processor = VisionProcessor()
+
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    # Display the uploaded image
+    st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
+    st.write("")
+    st.subheader("Analysis Options")
+
+    # Optional parameters
+    detail_option = st.selectbox(
+        "Select analysis detail:",
+        ("auto", "low", "high"),
+        index=0,
+        help="Controls the level of detail the model provides. 'Low' is faster and cheaper."
+    )
+
+    custom_prompt_input = st.text_area(
+        "Enter a custom prompt (optional):",
+        value="Describe this image comprehensively, identifying all objects, actions, and any text present.",
+        help="Provide specific instructions for the AI on what to focus on in the image."
+    )
+
+    if st.button("Analyze Image"):
+        with st.spinner("Analyzing image... This may take a moment."):
+            # Pass the raw bytes of the uploaded file
+            analysis_result = vision_processor.vision_analyze_image(
+                uploaded_file.read(),
+                detail=detail_option,
+                custom_prompt=custom_prompt_input
+            )
+
+        if analysis_result:
+            st.subheader("Analysis Result:")
+            st.markdown(f"**Description:**\n{analysis_result}")
+        else:
+            st.error("Could not get a valid analysis from the model.")
+
+st.markdown("""
+<style>
+.stButton>button {
+    background-color: #4CAF50;
+    color: white;
+    font-size: 16px;
+    padding: 10px 24px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+.stButton>button:hover {
+    background-color: #45a049;
+}
+</style>
+""", unsafe_allow_html=True)
