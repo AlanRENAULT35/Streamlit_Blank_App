@@ -1,13 +1,17 @@
 import streamlit as st
 from openai import OpenAI
 import base64
-import requests
+import requests # Used for potential future needs, not directly in this simplified version
 
 # --- Configuration ---
-# Replace "YOUR_OPENAI_API_KEY" with your actual OpenAI API key.
-# It's highly recommended to use environment variables for API keys in a real application.
-# For example: OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"
+# Use st.secrets to securely access your OpenAI API key
+try:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+except KeyError:
+    st.error("OpenAI API key not found in Streamlit secrets. "
+             "Please add it to your .streamlit/secrets.toml file like: "
+             "OPENAI_API_KEY = 'YOUR_API_KEY'")
+    st.stop() # Stop the app if the key is not found
 
 # Initialize the OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -100,9 +104,7 @@ st.header("🖼️ Generate Image from Text")
 user_input_dalle = st.text_area("Enter a text description for your image:", "A futuristic city at sunset, with flying cars and towering skyscrapers, in a vibrant cyberpunk style.")
 
 if st.button("Generate Image"):
-    if OPENAI_API_KEY == "YOUR_OPENAI_API_KEY":
-        st.warning("Please replace 'YOUR_OPENAI_API_KEY' with your actual OpenAI API key in the code.")
-    elif user_input_dalle:
+    if user_input_dalle:
         st.info("Generating your image... This may take a moment.")
         with st.spinner('Thinking...'):
             image_url = openai_create_image(user_input_dalle)
@@ -122,9 +124,7 @@ st.header("✨ Improve Your Prompt with ChatGPT")
 user_input_chatgpt = st.text_area("Enter a draft prompt to get an improved version:", "cat sitting on a couch")
 
 if st.button("Improve Prompt"):
-    if OPENAI_API_KEY == "YOUR_OPENAI_API_KEY":
-        st.warning("Please replace 'YOUR_OPENAI_API_KEY' with your actual OpenAI API key in the code.")
-    elif user_input_chatgpt:
+    if user_input_chatgpt:
         st.info("Improving your prompt with ChatGPT...")
         with st.spinner('Improving...'):
             improved_prompt = generate_prompt_with_chatgpt(user_input_chatgpt)
@@ -147,9 +147,7 @@ uploaded_file = st.file_uploader("Upload an image for variation (PNG or JPG reco
 variation_prompt = st.text_input("Enter a prompt to guide the variation (optional):", "Add a touch of magic to it.")
 
 if st.button("Create Variation"):
-    if OPENAI_API_KEY == "YOUR_OPENAI_API_KEY":
-        st.warning("Please replace 'YOUR_OPENAI_API_KEY' with your actual OpenAI API key in the code.")
-    elif uploaded_file is not None:
+    if uploaded_file is not None:
         # Save the uploaded file temporarily
         with open("temp_image_for_variation.png", "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -178,6 +176,6 @@ st.markdown("Developed with ❤️ using Streamlit and OpenAI APIs.")
 
 # To run this Streamlit app:
 # 1. Save the code as a Python file (e.g., `app.py`).
-# 2. Install the necessary libraries: `pip install streamlit openai`
-# 3. Replace "YOUR_OPENAI_API_KEY" with your actual OpenAI API key.
+# 2. Make sure you have the .streamlit/secrets.toml file configured as described above.
+# 3. Install the necessary libraries: `pip install streamlit openai`
 # 4. Run from your terminal: `streamlit run app.py`
