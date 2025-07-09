@@ -1,6 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import base64
+import os # Import os for file operations and environment variables
 
 # --- Configuration ---
 # Use st.secrets to securely access your OpenAI API key
@@ -42,7 +43,7 @@ def openai_create_image_variation(image_path: str, prompt: str) -> str:
     This method should take an existing image and a text prompt as input and use
     the DALL-E API from OpenAI to create a variation of the image based on the prompt.
     The image variation should be returned as output of the method.
-    
+
     Note: DALL-E 3 does not support image variations directly from an image.
     This functionality is typically available with DALL-E 2.
     For DALL-E 3, you would typically regenerate from a new prompt or modify the existing one.
@@ -91,144 +92,42 @@ def generate_prompt_with_chatgpt(user_text: str) -> str:
         st.error(f"Error generating improved prompt with ChatGPT: {e}")
         return None
 
-# --- 3. Intégration à l'application web Streamlit ---
-
-st.set_page_config(page_title="DALL-E Image Generator", layout="centered")
-
-st.title("🎨 DALL-E Image Generator")
-st.markdown("Generate images from text using OpenAI's DALL-E API.")
-
-# DALL-E Image Generation Section
-st.header("🖼️ Generate Image from Text")
-user_input_dalle = st.text_area("Enter a text description for your image:", "A futuristic city at sunset, with flying cars and towering skyscrapers, in a vibrant cyberpunk style.")
-
-if st.button("Generate Image"):
-    if user_input_dalle:
-        st.info("Generating your image... This may take a moment.")
-        with st.spinner('Thinking...'):
-            image_url = openai_create_image(user_input_dalle)
-            if image_url:
-                st.success("Image generated successfully!")
-                st.image(image_url, caption=user_input_dalle, use_column_width=True)
-                st.write(f"[Download Image]({image_url})")
-            else:
-                st.error("Failed to generate image.")
-    else:
-        st.warning("Please enter a description to generate an image.")
-
-st.markdown("---")
-
-# ChatGPT Prompt Improvement Section
-st.header("✨ Improve Your Prompt with ChatGPT")
-user_input_chatgpt = st.text_area("Enter a draft prompt to get an improved version:", "cat sitting on a couch")
-
-if st.button("Improve Prompt"):
-    if user_input_chatgpt:
-        st.info("Improving your prompt with ChatGPT...")
-        with st.spinner('Improving...'):
-            improved_prompt = generate_prompt_with_chatgpt(user_input_chatgpt)
-            if improved_prompt:
-                st.success("Prompt improved!")
-                st.code(improved_prompt, language="text")
-                st.markdown(f"You can now use this improved prompt: **{improved_prompt}**")
-            else:
-                st.error("Failed to improve prompt.")
-    else:
-        st.warning("Please enter a prompt to improve.")
-
-st.markdown("---")
-
-# DALL-E Image Variation Section (Requires DALL-E 2 and local file upload)
-st.header("🔄 Create Image Variation (DALL-E 2)")
-st.info("This feature uses DALL-E 2 and requires you to upload an image. DALL-E 3 does not support direct image variations.")
-
-uploaded_file = st.file_uploader("Upload an image for variation (PNG or JPG recommended):", type=["png", "jpg", "jpeg"])
-variation_prompt = st.text_input("Enter a prompt to guide the variation (optional):", "Add a touch of magic to it.")
-
-if st.button("Create Variation"):
-    if uploaded_file is not None:
-        # Save the uploaded file temporarily
-        with open("temp_image_for_variation.png", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        st.info("Creating image variation... This may take a moment.")
-        with st.spinner('Varying...'):
-            # The prompt for variation in DALL-E 2 is more for guiding the style, not adding new elements directly
-            # For simplicity, we are passing it, but its impact on variation is less direct than primary generation.
-            variation_image_url = openai_create_image_variation("temp_image_for_variation.png", variation_prompt)
-            
-            if variation_image_url:
-                st.success("Image variation created successfully!")
-                st.image(variation_image_url, caption="Image Variation", use_column_width=True)
-                st.write(f"[Download Variation]({variation_image_url})")
-            else:
-                st.error("Failed to create image variation.")
-        
-        # Clean up the temporary file
-        import os
-        os.remove("temp_image_for_variation.png")
-    else:
-        st.warning("Please upload an image to create a variation.")
-
-st.markdown("---")
-st.markdown("Developed with ❤️ using Streamlit and OpenAI APIs.")
-
-# To run this Streamlit app:
-# 1. Save the code as a Python file (e.g., `app.py`).
-# 2. Make sure you have the .streamlit/secrets.toml file configured as described above.
-# 3. Install the necessary libraries: `pip install streamlit openai`
-# 4. Run from your terminal: `streamlit run app.py`
-
-import os
-
+# --- Vision Method Class ---
 class VisionProcessor:
-    def __init__(self):
-        # Initialize OpenAI client with API key from environment variable
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    def __init__(self, openai_client):
+        # Initialize OpenAI client passed from the main app
+        self.client = openai_client
 
-    def encode_image(self, image_path):
-        """Encodes an image to a base64 string."""
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+    def encode_image(self, image_bytes):
+        """Encodes image bytes to a base64 string."""
+        return base64.b64encode(image_bytes).decode("utf-8")
 
-    def vision_analyze_image(self, image_input, detail="auto", custom_prompt=None):
+    def vision_analyze_image(self, image_input_bytes, detail="auto", custom_prompt=None):
         """
         Analyzes an image using OpenAI's Vision model.
 
         Args:
-            image_input (str or bytes): Path to the image file or base64 encoded image string.
+            image_input_bytes (bytes): Raw bytes of the image file (e.g., from st.file_uploader).
             detail (str): Optional. Controls the level of detail in the response.
                           Can be "low", "high", or "auto". Defaults to "auto".
             custom_prompt (str): Optional. A custom prompt to guide the analysis.
                                  If None, a default prompt is used.
 
         Returns:
-            dict: The JSON response from the OpenAI API containing the analysis.
-                  Returns None if an error occurs.
+            str: The analysis text from the OpenAI API.
+                 Returns None if an error occurs.
         """
-        if isinstance(image_input, str) and os.path.exists(image_input):
-            # If it's a file path, encode it
-            base64_image = self.encode_image(image_input)
-        elif isinstance(image_input, str) and image_input.startswith("data:image"):
-            # If it's already a data URI (base64 string with header)
-            base64_image = image_input.split(",")[1]
-        elif isinstance(image_input, bytes):
-            # If it's raw bytes (e.g., from st.file_uploader), encode it
-            base64_image = base64.b64encode(image_input).decode("utf-8")
-        else:
-            st.error("Invalid image input. Please provide a file path or image bytes.")
+        if not isinstance(image_input_bytes, bytes):
+            st.error("Invalid image input. Expected image bytes.")
             return None
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.client.api_key}"
-        }
+        base64_image = self.encode_image(image_input_bytes)
 
         # Determine the content for the image
         image_content = {
             "type": "image_url",
             "image_url": {
-                "url": f"data:image/jpeg;base64,{base64_image}",
+                "url": f"data:image/jpeg;base64,{base64_image}", # Assume JPEG for base64
                 "detail": detail  # Apply detail option
             }
         }
@@ -255,53 +154,140 @@ class VisionProcessor:
             st.error(f"An error occurred during image analysis: {e}")
             return None
 
-# --- Streamlit Application ---
 
-st.set_page_config(layout="wide", page_title="Image Analysis with OpenAI Vision")
+# --- 3. Intégration à l'application web Streamlit ---
 
-st.title("👁️ Image Analysis with OpenAI Vision")
-st.write("Upload an image and let OpenAI's `gpt-4o` model describe it for you.")
+st.set_page_config(page_title="OpenAI API Showcase", layout="wide") # Changed to wide layout for better spacing
 
-# Initialize VisionProcessor
-vision_processor = VisionProcessor()
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["DALL-E Image Generation", "ChatGPT Prompt Improvement", "OpenAI Vision Analysis"])
 
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+if page == "DALL-E Image Generation":
+    st.title("🎨 DALL-E Image Generator")
+    st.markdown("Generate images from text using OpenAI's DALL-E API.")
 
-if uploaded_file is not None:
-    # Display the uploaded image
-    st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
-    st.write("")
-    st.subheader("Analysis Options")
+    # DALL-E Image Generation Section
+    st.header("🖼️ Generate Image from Text")
+    user_input_dalle = st.text_area("Enter a text description for your image:", "A futuristic city at sunset, with flying cars and towering skyscrapers, in a vibrant cyberpunk style.")
 
-    # Optional parameters
-    detail_option = st.selectbox(
-        "Select analysis detail:",
-        ("auto", "low", "high"),
-        index=0,
-        help="Controls the level of detail the model provides. 'Low' is faster and cheaper."
-    )
-
-    custom_prompt_input = st.text_area(
-        "Enter a custom prompt (optional):",
-        value="Describe this image comprehensively, identifying all objects, actions, and any text present.",
-        help="Provide specific instructions for the AI on what to focus on in the image."
-    )
-
-    if st.button("Analyze Image"):
-        with st.spinner("Analyzing image... This may take a moment."):
-            # Pass the raw bytes of the uploaded file
-            analysis_result = vision_processor.vision_analyze_image(
-                uploaded_file.read(),
-                detail=detail_option,
-                custom_prompt=custom_prompt_input
-            )
-
-        if analysis_result:
-            st.subheader("Analysis Result:")
-            st.markdown(f"**Description:**\n{analysis_result}")
+    if st.button("Generate Image"):
+        if user_input_dalle:
+            st.info("Generating your image... This may take a moment.")
+            with st.spinner('Thinking...'):
+                image_url = openai_create_image(user_input_dalle)
+                if image_url:
+                    st.success("Image generated successfully!")
+                    st.image(image_url, caption=user_input_dalle, use_column_width=True)
+                    st.write(f"[Download Image]({image_url})")
+                else:
+                    st.error("Failed to generate image.")
         else:
-            st.error("Could not get a valid analysis from the model.")
+            st.warning("Please enter a description to generate an image.")
 
+    st.markdown("---")
+
+    # DALL-E Image Variation Section (Requires DALL-E 2 and local file upload)
+    st.header("🔄 Create Image Variation (DALL-E 2)")
+    st.info("This feature uses DALL-E 2 and requires you to upload an image. DALL-E 3 does not support direct image variations. Ensure the uploaded image is square (e.g., 512x512 or 1024x1024) and under 4MB.")
+
+    uploaded_file_variation = st.file_uploader("Upload an image for variation (PNG or JPG recommended):", type=["png", "jpg", "jpeg"], key="variation_uploader")
+    variation_prompt = st.text_input("Enter a prompt to guide the variation (optional):", "Make it look more ethereal.", key="variation_prompt_input")
+
+    if st.button("Create Variation", key="create_variation_button"):
+        if uploaded_file_variation is not None:
+            # Save the uploaded file temporarily
+            temp_file_path = "temp_image_for_variation.png"
+            with open(temp_file_path, "wb") as f:
+                f.write(uploaded_file_variation.getbuffer())
+
+            st.info("Creating image variation... This may take a moment.")
+            with st.spinner('Varying...'):
+                # DALL-E 2 generate_variation does not explicitly use the prompt in the same way DALL-E 3 does for generation.
+                # The prompt here primarily serves as a description for the user about the desired change.
+                variation_image_url = openai_create_image_variation(temp_file_path, variation_prompt)
+
+                if variation_image_url:
+                    st.success("Image variation created successfully!")
+                    st.image(variation_image_url, caption="Image Variation", use_column_width=True)
+                    st.write(f"[Download Variation]({variation_image_url})")
+                else:
+                    st.error("Failed to create image variation.")
+
+            # Clean up the temporary file
+            os.remove(temp_file_path)
+        else:
+            st.warning("Please upload an image to create a variation.")
+
+
+elif page == "ChatGPT Prompt Improvement":
+    st.title("✨ Improve Your Prompt with ChatGPT")
+    st.markdown("Leverage ChatGPT to get more descriptive and creative prompts for image generation.")
+
+    # ChatGPT Prompt Improvement Section
+    user_input_chatgpt = st.text_area("Enter a draft prompt to get an improved version:", "cat sitting on a couch")
+
+    if st.button("Improve Prompt"):
+        if user_input_chatgpt:
+            st.info("Improving your prompt with ChatGPT...")
+            with st.spinner('Improving...'):
+                improved_prompt = generate_prompt_with_chatgpt(user_input_chatgpt)
+                if improved_prompt:
+                    st.success("Prompt improved!")
+                    st.code(improved_prompt, language="text")
+                    st.markdown(f"You can now use this improved prompt: **{improved_prompt}**")
+                else:
+                    st.error("Failed to improve prompt.")
+        else:
+            st.warning("Please enter a prompt to improve.")
+
+elif page == "OpenAI Vision Analysis":
+    st.title("👁️ Image Analysis with OpenAI Vision")
+    st.write("Upload an image and let OpenAI's `gpt-4o` model describe it for you.")
+
+    # Initialize VisionProcessor using the globally initialized client
+    vision_processor = VisionProcessor(client)
+
+    uploaded_file_vision = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="vision_uploader")
+
+    if uploaded_file_vision is not None:
+        # Display the uploaded image
+        st.image(uploaded_file_vision, caption='Uploaded Image.', use_column_width=True)
+        st.write("")
+        st.subheader("Analysis Options")
+
+        # Optional parameters
+        detail_option = st.selectbox(
+            "Select analysis detail:",
+            ("auto", "low", "high"),
+            index=0,
+            help="Controls the level of detail the model provides. 'Low' is faster and cheaper."
+        )
+
+        custom_prompt_input = st.text_area(
+            "Enter a custom prompt (optional):",
+            value="Describe this image comprehensively, identifying all objects, actions, and any text present.",
+            help="Provide specific instructions for the AI on what to focus on in the image."
+        )
+
+        if st.button("Analyze Image", key="analyze_image_button"):
+            with st.spinner("Analyzing image... This may take a moment."):
+                # Pass the raw bytes of the uploaded file
+                analysis_result = vision_processor.vision_analyze_image(
+                    uploaded_file_vision.read(),
+                    detail=detail_option,
+                    custom_prompt=custom_prompt_input
+                )
+
+            if analysis_result:
+                st.subheader("Analysis Result:")
+                st.markdown(f"**Description:**\n{analysis_result}")
+            else:
+                st.error("Could not get a valid analysis from the model.")
+
+st.markdown("---")
+st.markdown("Developed with ❤️ using Streamlit and OpenAI APIs.")
+
+# --- Custom CSS for button styling ---
 st.markdown("""
 <style>
 .stButton>button {
