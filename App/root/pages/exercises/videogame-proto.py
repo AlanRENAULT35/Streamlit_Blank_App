@@ -177,4 +177,4 @@ if generate_all_button:
         st.warning("Veuillez sélectionner un genre, une ambiance et entrer des mots-clés.")
 
 st.markdown("---")
-st.markdown("Construit avec ❤️ et les API OpenAI par Votre Nom/Entreprise")
+st.markdown("Construit avec ❤️ et les API OpenAI par Alan RENAULT")
